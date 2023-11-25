@@ -1,26 +1,28 @@
 const express = require("express");
 const router = express.Router();
 const ctrlTask = require("../controller");
+const contactsTask = require("../controller/contacts");
+const userTask = require("../controller/user");
 
-router.get("/contacts", ctrlTask.get);
+router.get("/contacts", contactsTask.get);
 
-router.get("/contacts/:id", ctrlTask.getById);
+router.get("/contacts/:id", contactsTask.getById);
 
-router.post("/contacts", ctrlTask.create);
+router.post("/contacts", contactsTask.create);
 
-router.put("/contacts/:id", ctrlTask.update);
+router.put("/contacts/:id", contactsTask.update);
 
-router.patch("/contacts/:id/favorite", ctrlTask.updateFavorite);
+router.patch("/contacts/:id/favorite", contactsTask.updateFavorite);
 
-router.delete("/contacts/:id", ctrlTask.remove);
+router.delete("/contacts/:id", contactsTask.remove);
 
-router.post('/users/signup', ctrlTask.register);
+router.post('/users/signup', userTask.register);
 
-router.post("/users/login", ctrlTask.login);
+router.post("/users/login", userTask.login);
 
-router.get("/users/logout", ctrlTask.auth, ctrlTask.logout);
+router.get("/users/logout", userTask.auth, userTask.logout);
 
-router.get("/users/current", ctrlTask.auth, ctrlTask.listUser);
+router.get("/users/current", userTask.auth, userTask.listUser);
 
 
 module.exports = router;
