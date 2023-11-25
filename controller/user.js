@@ -4,23 +4,51 @@ const User = require("../service/schemas/user");
 require("dotenv").config();
 const secret = process.env.SECRET;
 
-const register = async (req, res, next) => {
-  const { username, email, password } = req.body;
-  const user = await User.findOne({ email }).lean();
-  if (user) {
-    return res.status(409).json({
-      status: "error",
-      code: 409,
-      message: "Email is already in use",
-      data: "Conflict",
-    });
-  }
+const Joi = require("joi");
 
+// Validation schema for registration
+const registrationSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().min(8).required(),
+  username: Joi.string().required(),
+});
+
+// Validation schema for login
+const loginSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().min(8).required(),
+});
+
+const register = async (req, res, next) => {
   try {
+    // Validate request body
+    const { error } = registrationSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        status: "error",
+        code: 400,
+        message: "Registration validation error",
+        data: error.details[0].message,
+      });
+    }
+
+    // Check if email is already in use
+    const { email, username, password } = req.body;
+    const user = await User.findOne({ email }).lean();
+    if (user) {
+      return res.status(409).json({
+        status: "error",
+        code: 409,
+        message: "Email is already in use",
+        data: "Conflict",
+      });
+    }
+
+    // Create a new user
     const newUser = new User({ username, email });
     newUser.setPassword(password);
-    // newUser.validPassword(password);
     await newUser.save();
+
     res.status(201).json({
       status: "success",
       code: 201,
@@ -38,34 +66,52 @@ const register = async (req, res, next) => {
 };
 
 const login = async (req, res, next) => {
-  const { email, password } = req.body;
-  const user = await User.findOne({ email });
+  try {
+    // Validate request body
+    const { error } = loginSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        status: "error",
+        code: 400,
+        message: "Login validation error",
+        data: error.details[0].message,
+      });
+    }
 
-  if (!user || !user.validPassword(password)) {
-    return res.status(400).json({
-      status: "error",
-      code: 400,
-      message: "Incorrect login or password",
-      data: "Bad request",
-    });
-  }
+    // Find user by email
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
 
-  const payload = {
-    id: user._id,
-    username: user.username,
-  };
+    // Check if user and password are valid
+    if (!user || !user.validPassword(password)) {
+      return res.status(401).json({
+        status: "error",
+        code: 401,
+        message: "Email or password is wrong",
+        data: "Unauthorized",
+      });
+    }
 
-  const token = jwt.sign(payload, secret, { expiresIn: "12h" });
-  res.json({
-    status: "success",
-    code: 200,
-    data: {
-      token,
-      user: {
-        email,
+    // Generate and send token
+    const payload = {
+      id: user._id,
+      username: user.username,
+    };
+
+    const token = jwt.sign(payload, secret, { expiresIn: "12h" });
+    res.json({
+      status: "success",
+      code: 200,
+      data: {
+        token,
+        user: {
+          email,
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 const logout = async (req, res, next) => {
