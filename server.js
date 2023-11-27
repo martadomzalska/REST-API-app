@@ -42,7 +42,7 @@ const routerApi = require("./api");
 app.use("/api", routerApi);
 
 const avatarsDir = path.join(__dirname, "public", "avatars");
-console.log(avatarsDir)
+console.log(avatarsDir);
 app.use("/avatars", express.static(avatarsDir));
 
 app.use((_, res, __) => {
