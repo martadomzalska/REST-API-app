@@ -9,6 +9,7 @@ const multer = require("multer");
 const fs = require("fs").promises;
 const Joi = require("joi");
 const gravatar = require("gravatar");
+const nodemailer = require("nodemailer");
 
 const registrationSchema = Joi.object({
   email: Joi.string().email().required(),
@@ -60,11 +61,39 @@ const register = async (req, res, next) => {
     const newUser = new User({ username, email, avatarURL });
     newUser.setPassword(password);
 
+    // Dodaj generowanie i zapisanie tokena weryfikacyjnego w bazie danych
+    const verificationToken = crypto.randomBytes(32).toString("hex");
+    newUser.verificationToken = verificationToken;
+    await newUser.save();
+
+    // Utwórz link weryfikacyjny
+    // const verificationLink = `/users/verify/${verificationToken}`;
+    const verificationLink = `http://localhost:3000/users/verify/${verificationToken}`;
+
+    // Wyślij wiadomość email z linkiem weryfikacyjnym
+    const transporter = nodemailer.createTransport({
+      // skonfiguruj transportera zgodnie z ustawieniami serwera pocztowego
+    });
+    const mailOptions = {
+      from: "domzalskam4@gmail.com",
+      to: email,
+      subject: "Email Verification",
+      text: `Click the following link to verify your email: ${verificationLink}`,
+    };
+
+    transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        console.error(error);
+      } else {
+        console.log("Email sent: " + info.response);
+      }
+    });
+
     res.status(201).json({
       status: "success",
       code: 201,
       data: {
-        message: "Registration successful",
+        message: "Registration successful. Verification email sent.",
         user: {
           email,
           username,
