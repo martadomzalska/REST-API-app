@@ -20,6 +20,10 @@ router.delete("/contacts/:id", contactsTask.remove);
 
 router.post("/users/signup", userTask.register);
 
+router.get("/users/verify/:verificationToken", userTask.verifyEmail);
+
+router.post("/users/verify", userTask.resendVerificationEmail);
+
 router.post("/users/login", userTask.login);
 
 router.get("/users/logout", userTask.auth, userTask.logout);

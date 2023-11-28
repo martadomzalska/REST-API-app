@@ -9,6 +9,8 @@ const multer = require("multer");
 const fs = require("fs").promises;
 const Joi = require("joi");
 const gravatar = require("gravatar");
+const nodemailer = require("nodemailer");
+const uuid = require("uuid");
 
 const registrationSchema = Joi.object({
   email: Joi.string().email().required(),
@@ -29,6 +31,7 @@ fs.mkdir(tmpFolder, { recursive: true });
 const avatarStorage = multer.memoryStorage();
 const avatarUpload = multer({ storage: avatarStorage });
 
+
 const register = async (req, res, next) => {
   try {
     const { error } = registrationSchema.validate(req.body);
@@ -42,8 +45,8 @@ const register = async (req, res, next) => {
     }
 
     const { email, username, password } = req.body;
-    const user = await User.findOne({ email }).lean();
-    if (user) {
+    const existingUser = await User.findOne({ email }).lean();
+    if (existingUser) {
       return res.status(409).json({
         status: "error",
         code: 409,
@@ -57,22 +60,53 @@ const register = async (req, res, next) => {
       { s: "250", r: "pg", d: "identicon" },
       true
     );
-    const newUser = new User({ username, email, avatarURL });
-    newUser.setPassword(password);
 
-    res.status(201).json({
-      status: "success",
-      code: 201,
-      data: {
-        message: "Registration successful",
-        user: {
-          email,
-          username,
-          avatarURL,
-        },
+    const verificationToken = uuid.v4();
+
+    const newUser = new User({ username, email, avatarURL, verificationToken });
+    newUser.setPassword(password);
+    await newUser.save();
+
+    const verificationLink = `http://localhost:3000/api/users/verify/${verificationToken}`;
+
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: "domzalskam4@gmail.com",
+        pass: process.env.EMAIL_PASS,
       },
     });
-    await newUser.save();
+
+    const mailOptions = {
+      from: "domzalskam4@gmail.com",
+      to: email,
+      subject: "Email Verification",
+      text: `Click the following link to verify your email: ${verificationLink}`,
+    };
+
+    transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({
+          status: "fail",
+          code: 500,
+          message: "Failed to send verification email",
+          data: "Internal Server Error",
+        });
+      }
+
+      return res.status(201).json({
+        status: "success",
+        code: 201,
+        data: {
+          message: `Registration successful. Verification email sent: ${verificationLink}`,
+          user: {
+            email,
+            username,
+          },
+        },
+      });
+    });
   } catch (error) {
     next(error);
   }
@@ -80,7 +114,7 @@ const register = async (req, res, next) => {
 
 const login = async (req, res, next) => {
   try {
-        const { error } = loginSchema.validate(req.body);
+    const { error } = loginSchema.validate(req.body);
     if (error) {
       return res.status(400).json({
         status: "error",
@@ -98,6 +132,16 @@ const login = async (req, res, next) => {
         status: "error",
         code: 401,
         message: "Email or password is wrong",
+        data: "Unauthorized",
+      });
+    }
+
+    if (!user.verify) {
+      return res.status(401).json({
+        status: "error",
+        code: 401,
+        message:
+          "Email not verified. Please verify your email before logging in.",
         data: "Unauthorized",
       });
     }
@@ -195,20 +239,113 @@ const updateAvatar = async (req, res, next) => {
 
     const tmpFilePath = path.join(tmpFolder, uniqueFileName);
 
-
     await processedImage.writeAsync(tmpFilePath);
 
-        const avatarPath = path.join(avatarsFolder, uniqueFileName);
+    const avatarPath = path.join(avatarsFolder, uniqueFileName);
 
-        await fs.rename(tmpFilePath, avatarPath);
+    await fs.rename(tmpFilePath, avatarPath);
 
-        user.avatarURL = `/avatars/${uniqueFileName}`;
+    user.avatarURL = `/avatars/${uniqueFileName}`;
     await user.save();
 
-        res.status(200).json({ avatarURL: user.avatarURL });
+    res.status(200).json({ avatarURL: user.avatarURL });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+const verifyEmail = async (req, res, next) => {
+  const { verificationToken } = req.params;
+
+  try {
+    const user = await User.findOne({ verificationToken });
+
+    if (!user) {
+      return res.status(404).json({
+        status: "error",
+        code: 404,
+        message: "User not found",
+      });
+    }
+
+    user.verificationToken = null;
+    user.verify = true;
+    await user.save();
+
+    return res.status(200).json({
+      status: "success",
+      code: 200,
+      message: "Verification successful",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const resendVerificationEmail = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        message: "Missing required field email",
+      });
+    }
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(400).json({
+        message: "User not found",
+      });
+    }
+
+    if (user.verify) {
+      return res.status(400).json({
+        message: "Verification has already been passed",
+      });
+    }
+
+    const verificationToken = uuid.v4();
+
+    user.verificationToken = verificationToken;
+    await user.save();
+
+    const verificationLink = `http://localhost:3000/api/users/verify/${verificationToken}`;
+
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: "domzalskam4@gmail.com",
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+
+    const mailOptions = {
+      from: "domzalskam4@gmail.com",
+      to: email,
+      subject: "Email Verification",
+      text: `Click the following link to verify your email: ${verificationLink}`,
+    };
+
+    transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({
+          status: "fail",
+          code: 500,
+          message: "Failed to resend verification email",
+          data: "Internal Server Error",
+        });
+      }
+
+      return res.status(200).json({
+        message: `Verification email sent: ${verificationLink}` ,
+      });
+    });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -219,4 +356,6 @@ module.exports = {
   auth,
   listUser,
   updateAvatar,
+  verifyEmail,
+  resendVerificationEmail,
 };
